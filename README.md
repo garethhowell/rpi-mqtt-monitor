@@ -1,11 +1,12 @@
-# Rapsberry Pi MQTT monitor
+# Raspberry Pi MQTT monitor
+Forked from 
 Python script to check the cpu load, cpu temperature, free space, used memory, swap usage, voltage and system clock speed
 on a Raspberry Pi computer and publish the data to a MQTT broker.
 
 I wrote this so I can monitor my raspberries at home with [home assistant](https://www.home-assistant.io/). The script was written and tested on Python 2 but it should work fine on Python 3.
-The script if very light, it takes 3 seconds as there are 5 half second sleeps in the code - due to mqtt haveing problems if I shoot the messages with no delay, this is only if you choose to send the messages separetely, now the script support a group CSV message that don't have this delay.
+The script is very light, it takes 3 seconds as there are 5 half second sleeps in the code - due to mqtt having problems if I shoot the messages with no delay, this is only if you choose to send the messages separetely, now the script support a group CSV message that don't have this delay.
 
-Each value measured by the script is send via a separate message for easier craetion of home assistant sensors.
+Each value measured by the script is send via a separate message for easier creation of home assistant sensors.
 
 Example message topic if ```group_messages = False ```:
 ```
