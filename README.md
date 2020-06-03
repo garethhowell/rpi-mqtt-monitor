@@ -1,5 +1,6 @@
 # Raspberry Pi MQTT monitor
-Forked from 
+Forked from <https://github.com/hjelev/rpi-mqtt-monitor>.
+
 Python script to check the cpu load, cpu temperature, free space, used memory, swap usage, voltage and system clock speed
 on a Raspberry Pi computer and publish the data to a MQTT broker.
 
