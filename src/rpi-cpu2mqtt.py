@@ -23,12 +23,12 @@ def check_used_space(path):
 def check_cpu_load():
 		# bash command to get cpu load from uptime command
 		p = subprocess.Popen("uptime", shell=True, stdout=subprocess.PIPE).communicate()[0]
-		cores = subprocess.Popen("nproc", shell=True, stdout=subprocess.PIPE).communicate()[0]		
+		cores = subprocess.Popen("nproc", shell=True, stdout=subprocess.PIPE).communicate()[0]
 		cpu_load = p.split("average:")[1].split(",")[0].replace(' ', '')
 		cpu_load = float(cpu_load)/int(cores)*100
 		cpu_load = round(float(cpu_load), 1)
 		return cpu_load
-		
+
 def check_voltage():
 		full_cmd = "vcgencmd measure_volts | cut -f2 -d= | sed 's/000//'"
 		voltage = subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
@@ -45,24 +45,46 @@ def check_memory():
 		full_cmd = "free -t | awk 'NR == 2 {print $3/$2*100}'"
 		memory = subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
 		memory = round(float(memory), 1)
-		return memory		
-		
+		return memory
+
 def check_cpu_temp():
 		full_cmd = "/opt/vc/bin/vcgencmd measure_temp"
 		p = subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
 		cpu_temp = p.replace('\n', ' ').replace('\r', '').split("=")[1].split("'")[0]
 		return cpu_temp
-		
+
 def check_sys_clock_speed():
 		full_cmd = "awk '{printf (\"%0.0f\",$1/1000); }' </sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
 		return subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
 
-	
+def register_device(name, unit_of_measurement, entity):
+		config_topic = discovery_prefix + "/sensor/" + hostname + "_" + entity + "/config"
+		print config_topic
+		name = hostname + " " + name
+		print name
+		state_topic = config.mqtt_topic_prefix + "/" + hostname + "/" + entity
+		print state_topic
+		unique_id = hostname + "_" + entity
+		print unique_id
+		payload = '{"name": "' + name + '", "state_topic": "' + state_topic + '", "device_class": "' + device_class + '", "unique_id: "' + unique_id + '"}'
+		print payload
+#		client.publish(config_topic, payload, retain=True)
+
+def register_devices(cpu_load, cpu_temp, used_space, voltage, sys_clock_speed, swap, memory):
+		if config.cpu_load:
+			register_device("CPU Load", "%", "cpuload")
+
 def publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 0, sys_clock_speed = 0, swap = 0, memory = 0):
 		# connect to mqtt server
 		client = paho.Client()
 		client.username_pw_set(config.mqtt_user, config.mqtt_password)
 		client.connect(config.mqtt_host, config.mqtt_port)
+
+		# register the devices with Home Assistant
+		register_devices(config.cpu_load, config.cpu_temp, config.used_space, config.voltage, config.sys_clock_speed,config.swap, config.memory)
+
+		# delay the execution of the script
+		time.sleep(config.random_delay)
 
 		# publish monitored values to MQTT
 		if config.cpu_load:
@@ -91,7 +113,7 @@ def publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 0, sy
 
 def bulk_publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 0, sys_clock_speed = 0, swap = 0, memory = 0):
 		# compose the CSV message containing the measured values
-		
+
 		values = cpu_load, float(cpu_temp), used_space, float(voltage), int(sys_clock_speed), swap, memory
 		values = str(values)[1:-1]
 
@@ -99,10 +121,10 @@ def bulk_publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 
 		client = paho.Client()
 		client.username_pw_set(config.mqtt_user, config.mqtt_password)
 		client.connect(config.mqtt_host, config.mqtt_port)
-		
+
 		# publish monitored values to MQTT
 		client.publish(config.mqtt_topic_prefix+"/"+hostname, values, qos=1)
-		
+
 		# disconect from mqtt server
 		client.disconnect()
 
@@ -111,11 +133,18 @@ def bulk_publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 
 if __name__ == '__main__':
 		# set all monitored values to False in case they are turned off in the config
 		cpu_load = cpu_temp = used_space = voltage = sys_clock_speed = swap = memory = False
-		
+
+		# set default device discovery prefix
+		device_discovery_prefix = "home-assistant"
+		if config.discovery_prefix:
+			device_discovery_prefix = config.discovery_prefix
+
 		# delay the execution of the script
 		time.sleep(config.random_delay)
-		
-		# collect the monitored values		
+
+
+
+		# collect the monitored values
 		if config.cpu_load:
 			cpu_load = check_cpu_load()
 		if config.cpu_temp:
@@ -123,7 +152,7 @@ if __name__ == '__main__':
 		if config.used_space:
 			used_space = check_used_space('/')
 		if config.voltage:
-			voltage = check_voltage() 
+			voltage = check_voltage()
 		if config.sys_clock_speed:
 			sys_clock_speed = check_sys_clock_speed()
 		if config.swap:
