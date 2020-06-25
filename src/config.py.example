@@ -7,7 +7,7 @@ mqtt_password = "password"
 mqtt_port = "1883"
 mqtt_topic_prefix = "tel/19c"
 
-discovery_prefix = "home-assistant"
+discovery_prefix = "homeassistant"
 # Messages configuration
 
 # If this is set to True the script will send just one message containing all values

@@ -8,6 +8,8 @@ import subprocess, time, socket, os
 import paho.mqtt.client as paho
 import json
 import config
+import logging
+import argparse
 
 # get device host name - used in mqtt topic
 hostname = socket.gethostname()
@@ -18,7 +20,7 @@ def get_hostname():
                 full_cmd = "hostname"
                 hostname = subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
                 hostname = hostname.strip('\n')
-                #print('local_host = %s', hostname)
+                logger.debug('local_host = %s', hostname)
                 return hostname
 
 def check_used_space(path):
@@ -32,7 +34,7 @@ def check_cpu_load():
                 # bash command to get cpu load from uptime command
                 p = subprocess.Popen("uptime", shell=True, stdout=subprocess.PIPE).communicate()[0]
                 cores = subprocess.Popen("nproc", shell=True, stdout=subprocess.PIPE).communicate()[0]
-                #print('p = %s, cores = %s', p, cores)
+                logger.debug('p = %s, cores = %s', p, cores)
                 cpu_load = p.split("average:")[1].split(",")[0].replace(' ', '')
                 cpu_load = float(cpu_load)/int(cores)*100
                 cpu_load = round(float(cpu_load), 1)
@@ -59,7 +61,6 @@ def check_memory():
 def check_cpu_temp():
                 full_cmd = "/opt/vc/bin/vcgencmd measure_temp"
                 p = subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
-                print(p)
                 cpu_temp = p.replace('\n', ' ').replace('\r', '').split("=")[1].split("'")[0]
                 return cpu_temp
 
@@ -67,62 +68,70 @@ def check_sys_clock_speed():
                 full_cmd = "awk '{printf (\"%0.0f\",$1/1000); }' </sys/devices/system/cpu/cpu0/cpufreq/scaling_cur_freq"
                 return subprocess.Popen(full_cmd, shell=True, stdout=subprocess.PIPE).communicate()[0]
 
-def register_device(client, name, device_class, entity):
+def register_device(client, name, device_class, unit, entity):
                 ''' Send a registration topic to Home Assistant using MQTT
                     :param client: the MQTT client object
                     :param name: How the sensor will be named in HA
                     :param device_class: The HA device_class
+                    :param unit: The measurement unit of the device
                     :param entity: A short form of Namei
 
                     The MQTT message needs to be sent to a topic of the form "<discovery_prefix>/<component>/[<node_id/]<object_id>/config"
                     The payload needs to be a json representation of:
                         "name": <entity>,
                         "device_class": "sensor",
+                        "measurement_unit": "V",
                         "state_topic": the topic that sensor measurements will sent to
                     '''
-                    
+                logger.debug("Registering device. name = %s, device_class = %s", name, device_class)
+
                 # Construct the configuration topic
                 config_topic = config.discovery_prefix + "/sensor/" + local_host + "/" + entity + "/config"
-                print("config_topic = %s", config_topic)
+                logger.debug("config_topic = %s", config_topic)
 
                 # Construct the "name" element
                 json_name = '"name": "' + local_host + "_" + entity + '"'
-                print("name = %s", json_name)
+                logger.debug("name = %s", json_name)
 
                 # Construct the state_topic
                 json_state_topic = '"state_topic": "' + config.mqtt_topic_prefix + "/" + local_host + "/" + entity + '"'
-                print("state_topic = %s", json_state_topic)
+                logger.debug("state_topic = %s", json_state_topic)
 
                 # Construct the device class
                 json_device_class = '"device_class": "' + device_class + '"'
-                print( 'json_device_class = %s', json_device_class)
+                logger.debug( 'json_device_class = %s', json_device_class)
+
+                # Construct the measurement measurement_unit
+                json_unit = '"measurement_unit": "' + unit + '"'
+                logger.debug('json_unit = %s', json_unit)
 
                 # Construct the unique id
                 json_unique_id = '"unique_id": "' + local_host + "_" + entity + '"'
-                print("unique_id = %s", json_unique_id)
-                
+                logger.debug("unique_id = %s", json_unique_id)
+
                 # Put together the payload
-                payload = '{' + json_name + ', ' + json_state_topic + ', ' + json_device_class + ', ' + json_unique_id + '}'
-                print("payload = %s", payload)
+                payload = '{' + json_name + ', ' + json_state_topic + ', ' + json_device_class + ', ' + \
+                    json_unit + ', ' + json_unique_id + '}'
+                logger.debug("payload = %s", payload)
 
                 # Publish the MQTT config message
                 client.publish(config_topic, payload, retain=True)
 
 def register_devices(client, cpu_load, cpu_temp, used_space, voltage, sys_clock_speed, swap, memory):
                 if config.cpu_load:
-                        register_device(client, "CPU Load", "generic", "cpuload")
+                        register_device(client, "CPU Load", "generic", "%", "cpuload")
                 if config.cpu_temp:
-                        register_device(client, "CPU Temp", "temperature", "cputemp")
+                        register_device(client, "CPU Temp", "temperature", "C", "cputemp")
                 if config.used_space:
-                        register_device(client, "Used Space", "generic", "space")
+                        register_device(client, "Used Space", "generic", "MB", "space")
                 if config.voltage:
-                        register_device(client, "Voltage", "generic", "volts")
+                        register_device(client, "Voltage", "generic", "V", "volts")
                 if config.sys_clock_speed:
-                        register_device(client, "Speed", "generic", "speed")
+                        register_device(client, "Speed", "generic", "MHz", "speed")
                 if config.swap:
-                        register_device(client, "Swap Space", "generic", "swap")
+                        register_device(client, "Swap Space", "generic", "MB", "swap")
                 if config.memory:
-                        register_device(client, "Memory", "generic", "memory")
+                        register_device(client, "Memory", "generic", "MB", "memory")
 
 def publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 0, sys_clock_speed = 0, swap = 0, memory = 0):
                 # connect to mqtt server
@@ -182,6 +191,24 @@ def bulk_publish_to_mqtt (cpu_load = 0, cpu_temp = 0, used_space = 0, voltage = 
 
 
 if __name__ == '__main__':
+
+                # Parse arguments
+                parser = argparse.ArgumentParser()
+                parser.add_argument("-l", "--loglevel", default="INFO",
+                    help="define logging level (default: %(default)s)")
+                args = parser.parse_args()
+
+                # Initialise logging
+                # Convert parser.loglevel to numeric logging level
+                logging_level = getattr(logging, args.loglevel.upper(), None)
+                if not isinstance(logging_level, int):
+                    raise ValueError('Invalid logging level: %s', loglevel)
+
+                # Create Logger object
+                logger = logging.getLogger("__name__")
+                logger.setLevel(logging_level)
+                logger.info("rpi-cpu2mqtt started")
+
                 # set all monitored values to False in case they are turned off in the config
                 cpu_load = cpu_temp = used_space = voltage = sys_clock_speed = swap = memory = False
 
@@ -199,25 +226,25 @@ if __name__ == '__main__':
                 # collect the monitored values
                 if config.cpu_load:
                         cpu_load = check_cpu_load()
-                        print("cpu load = ", cpu_load)
+                        logger.debug("cpu load = ", cpu_load)
                 if config.cpu_temp:
                         cpu_temp = check_cpu_temp()
-                        print("cpu temp = ", cpu_temp)
+                        logger.debug("cpu temp = ", cpu_temp)
                 if config.used_space:
                         used_space = check_used_space('/')
-                        print("used space = ", used_space)
+                        logger.debug("used space = ", used_space)
                 if config.voltage:
                         voltage = check_voltage()
-                        print("voltage = ", voltage)
+                        logger.debug("voltage = ", voltage)
                 if config.sys_clock_speed:
                         sys_clock_speed = check_sys_clock_speed()
-                        print("clock speed = ", sys_clock_speed)
+                        logger.debug("clock speed = ", sys_clock_speed)
                 if config.swap:
                         swap = check_swap()
-                        print("swap = ", swap)
+                        logger.debug("swap = ", swap)
                 if config.memory:
                         memory = check_memory()
-                        print("memory = ", memory)
+                        logger.debug("memory = ", memory)
 
                 # Publish messages to MQTT
                 if config.group_messages:
